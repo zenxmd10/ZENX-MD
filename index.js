@@ -1,3 +1,5 @@
+require('dotenv').config()
+
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -6,9 +8,6 @@ const {
 } = require('@whiskeysockets/baileys')
 
 const pino = require('pino')
-const qrcode = require('qrcode-terminal')
-
-let sock
 
 async function startBot() {
     const { state, saveCreds } =
@@ -16,25 +15,69 @@ async function startBot() {
 
     const { version } = await fetchLatestBaileysVersion()
 
-    console.log(
-        `📦 WhatsApp Web version: ${version.join('.')}`
-    )
-
-    sock = makeWASocket({
+    const sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
         version,
-        browser: ['ZENX-MD', 'Ubuntu', '1.0.0'],
-        keepAliveIntervalMs: 30_000 // 🔥 IMPORTANT
+        browser: [
+            process.env.BOT_NAME || 'ZENX-MD',
+            'Universal',
+            '1.0.0'
+        ],
+        keepAliveIntervalMs: 30_000
     })
 
     sock.ev.on('creds.update', saveCreds)
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, qr, lastDisconnect } = update
+    // 🔑 PAIR CODE (ONLY IF NOT REGISTERED)
+    if (!state.creds.registered) {
+        const number = process.env.PAIR_NUMBER
 
-        if (qr) {
+        if (!number) {
+            console.log('❌ PAIR_NUMBER not set')
+            process.exit(1)
+        }
+
+        setTimeout(async () => {
+            try {
+                const code =
+                    await sock.requestPairingCode(number)
+                console.log(`\n🔑 PAIR CODE: ${code}\n`)
+                console.log(
+                    '👉 WhatsApp > Linked Devices > Link with phone number'
+                )
+            } catch (e) {
+                console.log('❌ Pairing failed:', e.message)
+            }
+        }, 4000)
+    }
+
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update
+
+        if (connection === 'open') {
             console.log(
+                `🤖 ${process.env.BOT_NAME || 'ZENX-MD'} CONNECTED`
+            )
+        }
+
+        if (connection === 'close') {
+            const code =
+                lastDisconnect?.error?.output?.statusCode
+
+            if (code !== DisconnectReason.loggedOut) {
+                console.log('🔄 Reconnecting...')
+                startBot()
+            } else {
+                console.log('❌ Logged out')
+            }
+        }
+    })
+
+    return sock
+}
+
+module.exports = startBot            console.log(
                 '\n📷 Scan this QR (WhatsApp > Linked Devices)\n'
             )
             qrcode.generate(qr, { small: true })
