@@ -1,6 +1,8 @@
 module.exports = {
-    owner: ['919xxxxxxxxx'],
+    owner: ['919XXXXXXXXX'],   // owner number
     prefix: '.',
-    botName: 'MyBot',
-    sessionPath: './session'
+    botName: 'ZENX-MD',
+    sessionPath: './session',
+
+    mode: 'public'   // public | private | self
 }
