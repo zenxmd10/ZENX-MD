@@ -1,40 +1,67 @@
 const {
     default: makeWASocket,
     useMultiFileAuthState,
+    fetchLatestBaileysVersion,
     DisconnectReason
 } = require('@whiskeysockets/baileys')
+
 const pino = require('pino')
-const readline = require('readline')
+const qrcode = require('qrcode-terminal')
+
+let sock
 
 async function startBot() {
     const { state, saveCreds } =
         await useMultiFileAuthState('./session')
 
-    const sock = makeWASocket({
-        logger: pino({ level: 'silent' }),
+    const { version } = await fetchLatestBaileysVersion()
+
+    console.log(
+        `📦 WhatsApp Web version: ${version.join('.')}`
+    )
+
+    sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true // ✅ QR ENABLE
+        logger: pino({ level: 'silent' }),
+        version,
+        browser: ['ZENX-MD', 'Ubuntu', '1.0.0'],
+        keepAliveIntervalMs: 30_000 // 🔥 IMPORTANT
     })
 
     sock.ev.on('creds.update', saveCreds)
 
-    // 🔑 PAIRING CODE (if not registered)
-    if (!state.creds.registered) {
-        const rl = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout
-        })
+    sock.ev.on('connection.update', (update) => {
+        const { connection, qr, lastDisconnect } = update
 
-        rl.question(
-            '\n📱 Enter WhatsApp number (with country code): ',
-            async (number) => {
-                try {
-                    const code = await sock.requestPairingCode(number.trim())
-                    console.log(`\n🔑 PAIRING CODE: ${code}\n`)
-                    console.log('👉 WhatsApp > Linked Devices > Link with phone number\n')
-                } catch (err) {
-                    console.log('❌ Pairing failed:', err)
-                }
+        if (qr) {
+            console.log(
+                '\n📷 Scan this QR (WhatsApp > Linked Devices)\n'
+            )
+            qrcode.generate(qr, { small: true })
+        }
+
+        if (connection === 'open') {
+            console.log('🤖 ZENX-MD CONNECTED SUCCESSFULLY')
+        }
+
+        if (connection === 'close') {
+            const reason =
+                lastDisconnect?.error?.output?.statusCode
+
+            console.log('❌ Connection closed. Code:', reason)
+
+            if (reason !== DisconnectReason.loggedOut) {
+                console.log('🔄 Restarting socket...')
+                startBot()
+            }
+        }
+    })
+
+    // 🔥 KEEP PROCESS ALIVE (VERY IMPORTANT)
+    setInterval(() => {}, 1000)
+}
+
+module.exports = startBot                }
                 rl.close()
             }
         )
